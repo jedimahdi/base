@@ -1,0 +1,9 @@
+-Wall
+-Wextra
+-Wconversion
+-Wdouble-promotion
+-Wno-unused-parameter
+-Wno-unused-function
+-Wno-sign-conversion
+-I./src
+-lcriterion
