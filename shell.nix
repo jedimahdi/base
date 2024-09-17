@@ -1,7 +1,7 @@
 { pkgs ? import <nixpkgs> { } }:
 let
   buildInputs = with pkgs; [
-    criterion
+    # criterion
   ];
 in
 pkgs.mkShell {

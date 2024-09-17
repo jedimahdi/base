@@ -1,8 +1,8 @@
 #ifndef HASHTABLE_H_
 #define HASHTABLE_H_
 
-#include "arena.h"
-#include "defines.h"
+#include "memory/arena.h"
+#include "base/defines.h"
 
 typedef struct HNode HNode;
 typedef struct HTab HTab;

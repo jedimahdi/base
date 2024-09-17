@@ -1,14 +1,17 @@
 CC=gcc
-CFLAGS=-Wall -Wextra -g3 -fsanitize=undefined -fsanitize-undefined-trap-on-error -I./src
-LFLAGS=
-SRCS=$(wildcard src/*.c) $(wildcard src/os/*.c) $(wildcard src/ds/*.c)
+CFLAGS=-Wall -Wextra -I./include
+LFLAGS=-lm
+SRCS=$(wildcard src/*.c)
 TESTS := $(wildcard tests/*.c)
 TESTBINS := $(TESTS:tests/%.c=tests/build/%)
 
 all: main
 
-main: $(SRCS)
-	$(CC) $(CFLAGS) $(SRCS) -o $@ $(LFLAGS) 
+main: $(SRCS) main.c
+	$(CC) $(CFLAGS) main.c $(SRCS) -o $@ $(LFLAGS) 
+
+lib: $(SRCS)
+	$(CC) $(CFLAGS) -fPIC -shared $(SRCS) -o lib/libbase.so $(LFLAGS)
 
 tests: tests/build $(TESTBINS)
 	for test in $(TESTBINS) ; do ./$$test ; done
@@ -18,7 +21,6 @@ tests/build:
 
 tests/build/%: tests/%.c
 	$(CC) $(CFLAGS) $(SRCS) -o $@ $< -lcriterion
-
 
 clean:
 	rm main

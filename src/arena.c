@@ -1,131 +1,125 @@
-#include "arena.h"
-#include "defines.h"
+#include "memory/arena.h"
 #include "os/os.h"
+#include <stdint.h>
 #include <string.h>
 
-Arena arena_make(void) {
-  Arena arena = {0};
-  arena.capacity = ARENA_MAX_CAPACITY;
-  arena.memory = os_memory_reserve(arena.capacity);
-  arena.alloc_pos = 0;
-  arena.commit_pos = 0;
-  return arena;
+static bool is_power_of_two(uintptr_t x) {
+  return (x & (x - 1)) == 0;
 }
 
-Arena arena_make_with_capacity(u64 capacity) {
-  Arena arena = {0};
-  arena.capacity = capacity;
-  arena.memory = os_memory_reserve(arena.capacity);
-  arena.alloc_pos = 0;
-  arena.commit_pos = 0;
-  return arena;
+static uintptr_t align_forward(uintptr_t ptr, size_t align) {
+  uintptr_t p, a, modulo;
+
+  assert(is_power_of_two(align));
+
+  p = ptr;
+  a = (uintptr_t)align;
+  // Same as (p % a) but faster as 'a' is a power of two
+  modulo = p & (a - 1);
+
+  if (modulo != 0) {
+    // If 'p' address is not aligned, push the address to the
+    // next value which is aligned
+    p += a - modulo;
+  }
+  return p;
+}
+
+void arena_init(Arena *arena) {
+  arena->capacity = ARENA_MAX_CAPACITY;
+  arena->memory = os_memory_reserve(arena->capacity);
+  arena->curr_offset = 0;
+  arena->prev_offset = 0;
+  arena->commit_offset = 0;
+}
+
+void *arena_alloc_align(Arena *arena, size_t size, size_t align) {
+  uintptr_t curr_ptr = (uintptr_t)arena->memory + (uintptr_t)arena->curr_offset;
+  uintptr_t offset = align_forward(curr_ptr, align);
+  offset -= (uintptr_t)arena->memory;
+  uintptr_t new_offset = offset + size;
+
+  if (new_offset < arena->capacity) {
+    if (new_offset >= arena->commit_offset) {
+      uintptr_t new_commit_offset_unclamped = align_forward(new_offset, PAGE_SIZE);
+      uintptr_t new_commit_offset = clamp_top(new_commit_offset_unclamped, arena->capacity);
+      uintptr_t commit_size = new_commit_offset - arena->commit_offset;
+      os_memory_commit(arena->memory + arena->commit_offset, commit_size);
+      arena->commit_offset += commit_size;
+    }
+
+    void *ptr = arena->memory + offset;
+    arena->prev_offset = offset;
+    arena->curr_offset = new_offset;
+    memset(ptr, 0, size);
+    return ptr;
+  }
+
+  assert(0 && "Arena out of memory!");
+  return NULL;
+}
+
+void *arena_alloc(Arena *arena, size_t size) {
+  return arena_alloc_align(arena, size, DEFAULT_ALIGNMENT);
+}
+
+void *arena_resize_align(Arena *arena, void *oldptr, size_t old_size, size_t new_size, size_t align) {
+  unsigned char *old_mem = (unsigned char *)oldptr;
+
+  assert(is_power_of_two(align));
+
+  if (old_mem == NULL || old_size == 0) {
+    return arena_alloc_align(arena, new_size, align);
+  } else if (arena->memory <= old_mem && old_mem < arena->memory + arena->capacity) {
+    if (arena->memory + arena->prev_offset == old_mem) {
+      arena->curr_offset = arena->prev_offset + new_size;
+      if (new_size > old_size) {
+        memset(&arena->memory[arena->curr_offset], 0, new_size - old_size);
+      }
+      return oldptr;
+    } else {
+      void *new_memory = arena_alloc_align(arena, new_size, align);
+      size_t copy_size = old_size < new_size ? old_size : new_size;
+      memmove(new_memory, oldptr, copy_size);
+      return new_memory;
+    }
+  } else {
+    assert(0 && "Memory is out of bounds of the buffer in this arena");
+    return NULL;
+  }
+}
+
+void *arena_resize(Arena *arena, void *oldptr, size_t old_size, size_t new_size) {
+  return arena_resize_align(arena, oldptr, old_size, new_size, DEFAULT_ALIGNMENT);
 }
 
 void arena_clear(Arena *arena) {
-  arena->alloc_pos = 0;
+  arena->curr_offset = 0;
+  arena->prev_offset = 0;
 }
 
-void arena_free(Arena *arena) {
+void arena_release(Arena *arena) {
   os_memory_release(arena->memory, arena->capacity);
 }
 
-void *arena_alloc(Arena *arena, u64 elem_size, u64 align, u64 count) {
-  u64 size = elem_size * count;
-  u64 pos = arena->alloc_pos;
-  u64 pos_aligend = ALIGN_POW_2(pos, align);
-  u64 new_pos = pos_aligend + size;
-  void *result = arena->memory + pos_aligend;
-  arena->alloc_pos = new_pos;
-
-  if (new_pos > arena->commit_pos) {
-    u64 new_commit_unclamped = ALIGN_POW_2(new_pos, ARENA_COMMIT_SIZE);
-    u64 new_commit = clamp_top(new_commit_unclamped, arena->capacity);
-    u64 commit_size = new_commit - arena->commit_pos;
-
-    if (arena->commit_pos >= arena->capacity) {
-      assert(0 && "Arena is out of memory!");
-    } else {
-      os_memory_commit(arena->memory + arena->commit_pos, commit_size);
-      arena->commit_pos += commit_size;
-    }
-  }
-  return result;
-}
-
-void *arena_alloc_zero(Arena *arena, u64 elem_size, u64 align, u64 count) {
-  void *result = arena_alloc(arena, elem_size, align, count);
-  memset(result, 0, elem_size * count);
-  return result;
-}
-
-void *arena_realloc(Arena *arena, void *oldptr, u64 elem_size, u64 old_count, u64 new_count) {
-  if (new_count <= old_count)
-    return oldptr;
-  void *newptr = arena_alloc(arena, elem_size, DEFAULT_ALIGNMENT, new_count);
-  char *newptr_char = (char *)newptr;
-  char *oldptr_char = (char *)oldptr;
-  for (size_t i = 0; i < old_count * elem_size; ++i) {
-    newptr_char[i] = oldptr_char[i];
-  }
-  return newptr;
-}
-
-void *arena_push(Arena *arena, u64 size) {
-  return arena_alloc(arena, size, DEFAULT_ALIGNMENT, 1);
-  // u64 pos = arena->alloc_pos;
-  // u64 align = DEFAULT_ALIGNMENT;
-  // u64 pos_aligend = ALIGN_POW_2(pos, align);
-  // u64 new_pos = pos_aligend + size;
-  // void *result = arena->memory + pos_aligend;
-  // arena->alloc_pos = new_pos;
-  //
-  // if (new_pos > arena->commit_pos) {
-  //   u64 new_commit_unclamped = ALIGN_POW_2(new_pos, ARENA_COMMIT_SIZE);
-  //   u64 new_commit = CLAMP_TOP(new_commit_unclamped, arena->capacity);
-  //   u64 commit_size = new_commit - arena->commit_pos;
-  //
-  //   if (arena->commit_pos >= arena->capacity) {
-  //     assert(0 && "Arena is out of memory!");
-  //   } else {
-  //     os_memory_commit(arena->memory + arena->commit_pos, commit_size);
-  //     arena->commit_pos += commit_size;
-  //   }
-  // }
-  //
-  // return result;
-}
-
-void *arena_push_zero(Arena *arena, u64 size) {
-  void *result = arena_push(arena, size);
-  memset(result, 0, size);
-  return result;
-}
-
-void arena_pop(Arena *arena, u64 size) {
-  if (size > arena->alloc_pos)
-    size = arena->alloc_pos;
-  arena->alloc_pos -= size;
-}
-
-void arena_pop_to(Arena *arena, u64 pos) {
-  if (pos > arena->capacity)
-    pos = arena->capacity;
-  arena->alloc_pos = pos;
-}
-
 ArenaTemp arena_temp_begin(Arena *arena) {
-  return (ArenaTemp){.arena = arena, .pos = arena->alloc_pos};
+  ArenaTemp temp;
+  temp.arena = arena;
+  temp.curr_offset = arena->curr_offset;
+  temp.prev_offset = arena->prev_offset;
+  return temp;
 }
 
-void arena_temp_end(ArenaTemp tmp) {
-  arena_pop_to(tmp.arena, tmp.pos);
+void arena_temp_end(ArenaTemp temp) {
+  temp.arena->curr_offset = temp.curr_offset;
+  temp.arena->prev_offset = temp.prev_offset;
 }
 
 Arena scratch_arena = {0};
 
 ArenaTemp get_scratch(void) {
   if (scratch_arena.capacity == 0) {
-    scratch_arena = arena_make();
+    arena_init(&scratch_arena);
   }
   return arena_temp_begin(&scratch_arena);
 }

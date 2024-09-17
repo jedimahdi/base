@@ -57,14 +57,18 @@ static_assert(sizeof(f64) == 8, "Expected f64 to be 8 bytes.");
 #define FILE_NAME __FILE__
 #endif
 
+#if defined(COMPILER_CL)
+#define THREAD_LOCAL __declspec(thread)
+#elif defined(COMPILER_GCC) || defined(COMPILER_CLANG)
+#define THREAD_LOCAL __thread
+#endif
+
 #define countof(a) (sizeof(a) / sizeof(*(a)))
 #define lengthof(s) (countof(s) - 1)
 
-#define Gigabytes(count) (u64)(count * 1024 * 1024 * 1024)
-#define Megabytes(count) (u64)(count * 1024 * 1024)
-#define Kilobytes(count) (u64)(count * 1024)
-
-#define LENGTH(a) (sizeof(a) / sizeof(a)[0])
+#define GB(count) (u64)(count * 1024 * 1024 * 1024)
+#define MB(count) (u64)(count * 1024 * 1024)
+#define KB(count) (u64)(count * 1024)
 
 #define min(a, b) (((a) < (b)) ? (a) : (b))
 #define max(a, b) (((a) > (b)) ? (a) : (b))
@@ -73,19 +77,15 @@ static_assert(sizeof(f64) == 8, "Expected f64 to be 8 bytes.");
                                                         : (x))
 #define clamp_top(a, b) min(a, b)
 #define clamp_bot(a, b) max(a, b)
-#define ReverseClamp(a, x, b) (((x) < (a)) ? (b) : ((b) < (x)) ? (a) \
-                                                               : (x))
-#define Wrap(a, x, b) ReverseClamp(a, x, b)
+#define wrap(x, a, b) (((x) < (a)) ? (b) : ((b) < (x)) ? (a) \
+                                                       : (x))
 
-#define MemoryCopy(d, s, z) memmove((d), (s), (z))
-#define MemoryCopyStruct(d, s) MemoryCopy((d), (s), MIN(sizeof(*(d)), sizeof(*(s))))
-#define MemoryZero(d, z) memset((d), 0, (z))
-#define MemoryZeroStruct(d, s) MemoryZero((d), sizeof(s))
+#define memory_copy(dest, src, size) memmove((dest), (src), (size))
+#define memory_copy_struct(dest, s) memory_copy((dest), (s), min(sizeof(*(dest)), sizeof(*(s))))
+#define memory_zero(ptr, size) memset((ptr), 0, (size))
+#define memory_zero_type(ptr, type) memory_zero((ptr), sizeof(type))
 
-#define MEM_ZERO(d, z) memset((d), 0, (z))
-#define MEM_ZERO_STRUCT(d, s) MEM_ZERO((d), sizeof(s))
-
-#define ALIGN_POW_2(x, b) (((x) + ((b)-1)) & (~((b)-1)))
+#define align_ahead(x, b) (((x) + ((b) - 1)) & (~((b) - 1)))
 
 #define container_of(ptr, T, member) ({                  \
     const typeof( ((T *)0)->member ) *__mptr = (ptr);    \

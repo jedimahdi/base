@@ -1,30 +1,30 @@
-#include "avl.h"
+#include "containers/avl.h"
 
 #include <stddef.h>
 #include <stdint.h>
 
-void avlnode_init(avlnode *node) {
+void avlnode_init(AVLNode *node) {
   node->depth = 1;
   node->cnt = 1;
   node->left = node->right = node->parent = NULL;
 }
 
-u32 avl_depth(avlnode *node) {
+u32 avl_depth(AVLNode *node) {
   return node ? node->depth : 0;
 }
 
-u32 avl_cnt(avlnode *node) {
+u32 avl_cnt(AVLNode *node) {
   return node ? node->cnt : 0;
 }
 
 // maintaining the depth and cnt field
-static void avl_update(avlnode *node) {
+static void avl_update(AVLNode *node) {
   node->depth = 1 + max(avl_depth(node->left), avl_depth(node->right));
   node->cnt = 1 + avl_cnt(node->left) + avl_cnt(node->right);
 }
 
-static avlnode *rot_left(avlnode *node) {
-  avlnode *new_node = node->right;
+static AVLNode *rot_left(AVLNode *node) {
+  AVLNode *new_node = node->right;
   if (new_node->left) {
     new_node->left->parent = node;
   }
@@ -37,8 +37,8 @@ static avlnode *rot_left(avlnode *node) {
   return new_node;
 }
 
-static avlnode *rot_right(avlnode *node) {
-  avlnode *new_node = node->left;
+static AVLNode *rot_right(AVLNode *node) {
+  AVLNode *new_node = node->left;
   if (new_node->right) {
     new_node->right->parent = node;
   }
@@ -52,7 +52,7 @@ static avlnode *rot_right(avlnode *node) {
 }
 
 // the left subtree is too deep
-static avlnode *avl_fix_left(avlnode *root) {
+static AVLNode *avl_fix_left(AVLNode *root) {
   if (avl_depth(root->left->left) < avl_depth(root->left->right)) {
     root->left = rot_left(root->left);
   }
@@ -60,7 +60,7 @@ static avlnode *avl_fix_left(avlnode *root) {
 }
 
 // the right subtree is too deep
-static avlnode *avl_fix_right(avlnode *root) {
+static AVLNode *avl_fix_right(AVLNode *root) {
   if (avl_depth(root->right->right) < avl_depth(root->right->left)) {
     root->right = rot_right(root->right);
   }
@@ -68,12 +68,12 @@ static avlnode *avl_fix_right(avlnode *root) {
 }
 
 // fix imbalanced nodes and maintain invariants until the root is reached
-avlnode *avl_fix(avlnode *node) {
+AVLNode *avl_fix(AVLNode *node) {
   while (true) {
     avl_update(node);
     uint32_t l = avl_depth(node->left);
     uint32_t r = avl_depth(node->right);
-    avlnode **from = NULL;
+    AVLNode **from = NULL;
     if (node->parent) {
       from = (node->parent->left == node)
                  ? &node->parent->left
@@ -93,11 +93,11 @@ avlnode *avl_fix(avlnode *node) {
 }
 
 // detach a node and returns the new root of the tree
-avlnode *avl_del(avlnode *node) {
+AVLNode *avl_del(AVLNode *node) {
   if (node->right == NULL) {
     // no right subtree, replace the node with the left subtree
     // link the left subtree to the parent
-    avlnode *parent = node->parent;
+    AVLNode *parent = node->parent;
     if (node->left) {
       node->left->parent = parent;
     }
@@ -115,11 +115,11 @@ avlnode *avl_del(avlnode *node) {
     }
   } else {
     // swap the node with its next sibling
-    avlnode *victim = node->right;
+    AVLNode *victim = node->right;
     while (victim->left) {
       victim = victim->left;
     }
-    avlnode *root = avl_del(victim);
+    AVLNode *root = avl_del(victim);
 
     *victim = *node;
     if (victim->left) {
@@ -128,7 +128,7 @@ avlnode *avl_del(avlnode *node) {
     if (victim->right) {
       victim->right->parent = victim;
     }
-    avlnode *parent = node->parent;
+    AVLNode *parent = node->parent;
     if (parent) {
       if (parent->left == node) {
         parent->left = victim;

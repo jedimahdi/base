@@ -1,7 +1,7 @@
-#include "hashtable.h"
+#include "containers/hashtable.h"
 
-#include "arena.h"
-#include "hashtable.h"
+#include "containers/hashtable.h"
+#include "memory/arena.h"
 #include <assert.h>
 #include <stdlib.h>
 
